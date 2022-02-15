@@ -1,5 +1,6 @@
 import * as React from 'react'
 import moment from 'moment'
+import { TooltippedContent } from './lib/tooltipped-content'
 
 interface IRelativeTimeProps {
   /**
@@ -15,6 +16,15 @@ interface IRelativeTimeProps {
    * Defaults to `false`
    */
   readonly abbreviate?: boolean
+
+  /**
+   * By default the RelativeTime component will start displaying a compact
+   * absolute date if the date is more than one week ago. Setting `onlyRelative`
+   * to true overrides this behavior and forces relative times for all dates.
+   */
+  readonly onlyRelative?: boolean
+
+  readonly className?: string
 }
 
 interface IRelativeTimeState {
@@ -81,14 +91,13 @@ export class RelativeTime extends React.Component<
     const diff = then.diff(now)
     const duration = Math.abs(diff)
     const absoluteText = then.format('LLLL')
-    const relativeText =
-      this.props.abbreviate === true
-        ? moment
-            .duration(duration, 'milliseconds')
-            .format('y[y] M[m] w[w] d[d] h[h] m[m]', {
-              largest: 1,
-            })
-        : then.from(now)
+    const format = this.props.abbreviate
+      ? 'y[y] M[m] w[w] d[d] h[h] m[m]'
+      : 'y [years] ago M [months] ago d [days] ago h [hours] ago m [minutes] ago'
+
+    const relativeText = moment
+      .duration(duration, 'milliseconds')
+      .format(format, { largest: 1 })
 
     // Future date, let's just show as absolute and reschedule. If it's less
     // than a minute into the future we'll treat it as 'just now'.
@@ -103,7 +112,11 @@ export class RelativeTime extends React.Component<
     } else if (duration < 7 * DAY) {
       this.updateAndSchedule(absoluteText, relativeText, 6 * HOUR)
     } else {
-      this.setState({ absoluteText, relativeText: then.format('ll') })
+      if (this.props.onlyRelative === true) {
+        this.updateAndSchedule(absoluteText, relativeText, 6 * HOUR)
+      } else {
+        this.setState({ absoluteText, relativeText: then.format('ll') })
+      }
     }
   }
 
@@ -138,7 +151,12 @@ export class RelativeTime extends React.Component<
 
   public render() {
     return (
-      <span title={this.state.absoluteText}>{this.state.relativeText}</span>
+      <TooltippedContent
+        className={this.props.className}
+        tooltip={this.state.absoluteText}
+      >
+        {this.state.relativeText}
+      </TooltippedContent>
     )
   }
 }
