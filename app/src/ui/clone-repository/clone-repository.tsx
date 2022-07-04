@@ -1,6 +1,5 @@
 import * as Path from 'path'
 import * as React from 'react'
-import { readdir } from 'fs-extra'
 import { Dispatcher } from '../dispatcher'
 import { getDefaultDir, setDefaultDir } from '../lib/default-dir'
 import { Account } from '../../models/account'
@@ -22,8 +21,8 @@ import { IAccountRepositories } from '../../lib/stores/api-repositories-store'
 import { merge } from '../../lib/merge'
 import { ClickSource } from '../lib/list'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
-import { enableSaveDialogOnCloneRepository } from '../../lib/feature-flag'
 import { showOpenDialog, showSaveDialog } from '../main-process-proxy'
+import { readdir } from 'fs/promises'
 
 interface ICloneRepositoryProps {
   readonly dispatcher: Dispatcher
@@ -530,7 +529,10 @@ export class CloneRepository extends React.Component<
   }
 
   private onChooseDirectory = async () => {
-    if (enableSaveDialogOnCloneRepository()) {
+    // We received feedback (#12812) that using the save dialog is confusing on
+    // windows due to appearing to require a file selection. This is not the case
+    // on mac where it more clearly shows directory creation.
+    if (__DARWIN__) {
       return this.onChooseWithSaveDialog()
     }
 

@@ -94,7 +94,7 @@ import { StatsStore } from '../stats'
 import { getTagsToPush, storeTagsToPush } from './helpers/tags-to-push-storage'
 import { DiffSelection, ITextDiff } from '../../models/diff'
 import { getDefaultBranch } from '../helpers/default-branch'
-import { stat } from 'fs-extra'
+import { stat } from 'fs/promises'
 import { findForkedRemotesToPrune } from './helpers/find-forked-remotes-to-prune'
 
 /** The number of commits to load from history per batch. */
@@ -770,9 +770,8 @@ export class GitStore extends BaseStore {
     const lines = unfolded.split('\n')
 
     // We don't know (I mean, we're fairly sure) what the separator character
-    // used for the trailer is so we call out to git to get all possible
-    // characters. We'll need them in a bit
-    const separators = await getTrailerSeparatorCharacters(this.repository)
+    // used for the trailer is so we call out to git to get all possibilities
+    let separators: string | undefined = undefined
 
     // We know that what we've got now is well formed so we can capture the leading
     // token, followed by the separator char and a single space, followed by the
@@ -787,7 +786,14 @@ export class GitStore extends BaseStore {
       const match = coAuthorRe.exec(line)
 
       // Not a trailer line, we're sure of that
-      if (!match || separators.indexOf(match[1]) === -1) {
+      if (!match) {
+        continue
+      }
+
+      // Only shell out for separators if we really need them
+      separators ??= await getTrailerSeparatorCharacters(this.repository)
+
+      if (separators.indexOf(match[1]) === -1) {
         continue
       }
 

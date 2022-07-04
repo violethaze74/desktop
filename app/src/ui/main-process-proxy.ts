@@ -1,8 +1,9 @@
 import { ExecutableMenuItem } from '../models/app-menu'
 import { RequestResponseChannels, RequestChannels } from '../lib/ipc-shared'
 import * as ipcRenderer from '../lib/ipc-renderer'
-import { stat } from 'fs-extra'
+import { stat } from 'fs/promises'
 import { isApplicationBundle } from '../lib/is-application-bundle'
+import { pathExists } from './lib/path-exists'
 
 /**
  * Creates a strongly typed proxy method for sending a duplex IPC message to the
@@ -90,7 +91,7 @@ export const focusWindow = sendProxy('focus-window', 0)
 const _showItemInFolder = invokeProxy('show-item-in-folder', 1)
 
 export const showItemInFolder = (path: string) =>
-  stat(path)
+  pathExists(path)
     .then(() => _showItemInFolder(path))
     .catch(err => log.error(`Unable show item in folder '${path}'`, err))
 
@@ -153,6 +154,9 @@ export const getCurrentWindowZoomFactor = invokeProxy(
   'get-current-window-zoom-factor',
   0
 )
+
+/** Tell the main process to set the current window's zoom factor */
+export const setWindowZoomFactor = sendProxy('set-window-zoom-factor', 1)
 
 /** Tell the main process to check for app updates */
 export const checkForUpdates = invokeProxy('check-for-updates', 1)
@@ -338,3 +342,22 @@ export const showSaveDialog = invokeProxy('show-save-dialog', 1)
  * Tell the main process to show open dialog
  */
 export const showOpenDialog = invokeProxy('show-open-dialog', 1)
+
+/** Tell the main process read/save the user GUID from/to file */
+export const saveGUID = invokeProxy('save-guid', 1)
+export const getGUID = invokeProxy('get-guid', 0)
+
+/** Tell the main process to show a notification */
+export const showNotification = invokeProxy('show-notification', 3)
+
+/** Tell the main process to obtain the app's permission to display notifications */
+export const getNotificationsPermission = invokeProxy(
+  'get-notifications-permission',
+  0
+)
+
+/** Tell the main process to request the app's permission to display notifications */
+export const requestNotificationsPermission = invokeProxy(
+  'request-notifications-permission',
+  0
+)

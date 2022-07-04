@@ -1,6 +1,5 @@
 import * as React from 'react'
 import * as Path from 'path'
-import * as FSE from 'fs-extra'
 
 import { Dispatcher } from '../dispatcher'
 import {
@@ -8,7 +7,8 @@ import {
   createCommit,
   getStatus,
   getAuthorIdentity,
-  isGitRepository,
+  getRepositoryType,
+  RepositoryType,
 } from '../../lib/git'
 import { sanitizedRepositoryName } from './sanitized-repository-name'
 import { TextBox } from '../lib/text-box'
@@ -31,6 +31,10 @@ import { Ref } from '../lib/ref'
 import { enableReadmeOverwriteWarning } from '../../lib/feature-flag'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 import { showOpenDialog } from '../main-process-proxy'
+import { pathExists } from '../lib/path-exists'
+import { mkdir } from 'fs/promises'
+import { directoryExists } from '../../lib/directory-exists'
+import { join } from 'path'
 
 /** The sentinel value used to indicate no gitignore should be used. */
 const NoGitIgnoreValue = 'None'
@@ -41,6 +45,23 @@ const NoLicenseValue: ILicense = {
   featured: false,
   body: '',
   hidden: false,
+}
+
+/** Is the path a git repository? */
+export const isGitRepository = async (path: string) => {
+  const type = await getRepositoryType(path).catch(e => {
+    log.error(`Unable to determine repository type`, e)
+    return { kind: 'missing' } as RepositoryType
+  })
+
+  if (type.kind === 'unsafe') {
+    // If the path is considered unsafe by Git we won't be able to
+    // verify that it's a repository (or worktree). So we'll fall back to this
+    // naive approximation.
+    return directoryExists(join(path, '.git'))
+  }
+
+  return type.kind !== 'missing'
 }
 
 interface ICreateRepositoryProps {
@@ -126,16 +147,13 @@ export class CreateRepository extends React.Component<
     window.addEventListener('focus', this.onWindowFocus)
 
     const gitIgnoreNames = await getGitIgnoreNames()
-    this.setState({ gitIgnoreNames })
-
     const licenses = await getLicenses()
-    this.setState({ licenses })
 
-    const path =
-      this.state.path !== null ? this.state.path : await getDefaultDir()
-    const isRepository = await isGitRepository(path)
-    this.setState({ isRepository })
+    this.setState({ gitIgnoreNames, licenses })
 
+    const path = this.state.path ?? (await getDefaultDir())
+
+    this.updateIsRepository(path, this.state.name)
     this.updateReadMeExists(path, this.state.name)
   }
 
@@ -145,25 +163,38 @@ export class CreateRepository extends React.Component<
 
   private initializePath = async () => {
     const path = await getDefaultDir()
-    this.setState({ path })
+    this.setState(s => (s.path === null ? { path } : null))
   }
 
   private onPathChanged = async (path: string) => {
-    this.setState({ path, isValidPath: null })
+    this.setState({ path, isValidPath: null, isRepository: false })
 
-    const isRepository = await isGitRepository(path)
-
-    // Only update isRepository if the path is still the
-    // same one we were using to check whether it looked
-    // like a repository.
-    this.setState(state => (state.path === path ? { isRepository } : null))
-
+    this.updateIsRepository(path, this.state.name)
     this.updateReadMeExists(path, this.state.name)
   }
 
   private onNameChanged = (name: string) => {
+    const { path } = this.state
+
     this.setState({ name })
+
+    if (path === null) {
+      return
+    }
+
+    this.updateIsRepository(path, name)
     this.updateReadMeExists(this.state.path, name)
+  }
+
+  private async updateIsRepository(path: string, name: string) {
+    const fullPath = Path.join(path, sanitizedRepositoryName(name))
+    const isRepository = await isGitRepository(fullPath)
+
+    // Only update isRepository if the path is still the same one we were using
+    // to check whether it looked like a repository.
+    this.setState(state =>
+      state.path === path && state.name === name ? { isRepository } : null
+    )
   }
 
   private onDescriptionChanged = (description: string) => {
@@ -179,9 +210,8 @@ export class CreateRepository extends React.Component<
       return
     }
 
-    const isRepository = await isGitRepository(path)
-
-    this.setState({ isRepository, path })
+    this.setState({ path, isRepository: false })
+    this.updateIsRepository(path, this.state.name)
   }
 
   private async updateReadMeExists(path: string | null, name: string) {
@@ -190,7 +220,7 @@ export class CreateRepository extends React.Component<
     }
 
     const fullPath = Path.join(path, sanitizedRepositoryName(name), 'README.md')
-    const readMeExists = await FSE.pathExists(fullPath)
+    const readMeExists = await pathExists(fullPath)
 
     // Only update readMeExists if the path is still the same
     this.setState(state => (state.path === path ? { readMeExists } : null))
@@ -206,7 +236,7 @@ export class CreateRepository extends React.Component<
       // if the user provided an initial path and didn't change it, we should
       // validate it is an existing path and use that for the repository
       try {
-        await FSE.ensureDir(currentPath)
+        await mkdir(currentPath, { recursive: true })
         return currentPath
       } catch {}
     }
@@ -225,7 +255,7 @@ export class CreateRepository extends React.Component<
     }
 
     try {
-      await FSE.ensureDir(fullPath)
+      await mkdir(fullPath, { recursive: true })
       this.setState({ isValidPath: true })
     } catch (e) {
       if (e.code === 'EACCES' && e.errno === -13) {
@@ -323,7 +353,7 @@ export class CreateRepository extends React.Component<
 
     try {
       const gitAttributes = Path.join(fullPath, '.gitattributes')
-      const gitAttributesExists = await FSE.pathExists(gitAttributes)
+      const gitAttributesExists = await pathExists(gitAttributes)
       if (!gitAttributesExists) {
         await writeGitAttributes(fullPath)
       }
@@ -520,15 +550,15 @@ export class CreateRepository extends React.Component<
   }
 
   private onAddRepositoryClicked = () => {
-    if (this.state.path === null) {
-      // Shouldn't be able to even get here if path is null.
-      return
-    }
+    const { path, name } = this.state
 
-    return this.props.dispatcher.showPopup({
-      type: PopupType.AddRepository,
-      path: this.state.path,
-    })
+    // Shouldn't be able to even get here if path is null.
+    if (path !== null) {
+      this.props.dispatcher.showPopup({
+        type: PopupType.AddRepository,
+        path: Path.join(path, sanitizedRepositoryName(name)),
+      })
+    }
   }
 
   public render() {

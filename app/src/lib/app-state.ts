@@ -46,7 +46,6 @@ import {
   MultiCommitOperationDetail,
   MultiCommitOperationStep,
 } from '../models/multi-commit-operation'
-import { DragAndDropIntroType } from '../ui/history/drag-and-drop-intro'
 import { IChangesetData } from './git'
 
 export enum SelectionType {
@@ -180,6 +179,9 @@ export interface IAppState {
   /** Whether we should show the update banner */
   readonly isUpdateAvailableBannerVisible: boolean
 
+  /** Whether there is an update to showcase */
+  readonly isUpdateShowcaseVisible: boolean
+
   /** Whether we should ask the user to move the app to /Applications */
   readonly askToMoveToApplicationsFolderSetting: boolean
 
@@ -281,11 +283,6 @@ export interface IAppState {
    * Whether or not the app should use spell check on commit summary and description
    */
   readonly commitSpellcheckEnabled: boolean
-
-  /**
-   * List of drag & drop intro types that have been shown to the user.
-   */
-  readonly dragAndDropIntroTypesShown: ReadonlySet<DragAndDropIntroType>
 
   /**
    * Record of what logged in users have been checked to see if thank you is in
@@ -556,6 +553,39 @@ export interface ICommitSelection {
   /** The commits currently selected in the app */
   readonly shas: ReadonlyArray<string>
 
+  /**
+   * When multiple commits are selected, the diff is created using the rev range
+   * of firstSha^..lastSha in the selected shas. Thus comparing the trees of the
+   * the lastSha and the first parent of the first sha. However, our history
+   * list shows commits in chronological order. Thus, when a branch is merged,
+   * the commits from that branch are injected in their chronological order into
+   * the history list. Therefore, given a branch history of A, B, C, D,
+   * MergeCommit where B and C are from the merged branch, diffing on the
+   * selection of A through D would not have the changes from B an C.
+   *
+   * This is a list of the shas that are reachable by following the parent links
+   * (aka the graph) from the lastSha to the firstSha^ in the selection.
+   *
+   * Other notes: Given a selection A through D, executing `git diff A..D` would
+   * give us the changes since A but not including A; since the user will have
+   * selected A, we do `git diff A^..D` so that we include the changes of A.
+   * */
+  readonly shasInDiff: ReadonlyArray<string>
+
+  /**
+   * Whether the a selection of commits are group of adjacent to each other.
+   * Example: Given these are indexes of sha's in history, 3, 4, 5, 6 is contiguous as
+   * opposed to 3, 5, 8.
+   *
+   * Technically order does not matter, but shas are stored in order.
+   *
+   * Contiguous selections can be diffed. Non-contiguous selections can be
+   * cherry-picked, reordered, or squashed.
+   *
+   * Assumed that a selections of zero or one commit are contiguous.
+   * */
+  readonly isContiguous: boolean
+
   /** The changeset data associated with the selected commit */
   readonly changesetData: IChangesetData
 
@@ -705,6 +735,9 @@ export interface ICompareState {
 
   /** The SHAs of commits to render in the compare list */
   readonly commitSHAs: ReadonlyArray<string>
+
+  /** The SHAs of commits to highlight in the compare list */
+  readonly shasToHighlight: ReadonlyArray<string>
 
   /**
    * A list of branches (remote and local) except the current branch, and

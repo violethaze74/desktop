@@ -178,6 +178,8 @@ function getInitialRepositoryState(): IRepositoryState {
   return {
     commitSelection: {
       shas: [],
+      shasInDiff: [],
+      isContiguous: true,
       file: null,
       changesetData: { files: [], linesAdded: 0, linesDeleted: 0 },
       diff: null,
@@ -218,6 +220,7 @@ function getInitialRepositoryState(): IRepositoryState {
       showBranchList: false,
       filterText: '',
       commitSHAs: [],
+      shasToHighlight: [],
       branches: new Array<Branch>(),
       recentBranches: new Array<Branch>(),
       defaultBranch: null,
